@@ -652,7 +652,7 @@ QImage EGSPhant::getEGSPhantPicMed(QString axis, double ai, double af,
     // Calculate the size (in cm) of pixels, and then the range for grayscaling
     wInc = 1/res;
     hInc = 1/res;
-    cInc = 255.0/(media.size()-1);
+    cInc = 255.0/media.size();
 
     for (int i = 0; i < height; i++)
         for (int j = 0; j < width; j++) {
