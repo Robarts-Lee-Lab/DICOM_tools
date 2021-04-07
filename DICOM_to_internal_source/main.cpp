@@ -89,6 +89,8 @@ int main(int argc, char **argv) {
 	filterLowActivity=Y sets any activity below Y*maxActivity equal
 	to zero.
 	
+	outputName=Z sets output file name to "Z.txt".
+	
 	outputImages outputs PNGs of each slice of the output phantoms
 	for both media and density, as well as a blue->red wash of 
 	activity assigned to phant in Activity.txt.  It is very time
@@ -98,6 +100,7 @@ int main(int argc, char **argv) {
 	bool outputImages = false;
 	double filterLowDensity = 0;
 	double filterLowActivity = 0.01;
+	QString fileName = "Activity";
 	
 	if (argc == 1) {
         std::cout << "Please call this program with one or more .dcm files and a .egsphant or .begsphant file.\n";
@@ -117,6 +120,8 @@ int main(int argc, char **argv) {
 			filterLowDensity = path.right(path.size()-17).toDouble();
         else if (!path.left(18).compare("filterLowActivity="))
 			filterLowActivity = path.right(path.size()-18).toDouble();
+        else if (!path.left(11).compare("outputName="))
+			fileName = path.right(path.size()-11);
         else if (path.endsWith(".egsphant"))
 			phant.loadEGSPhantFilePlus(path);
 		else if (path.endsWith(".begsphant"))
@@ -173,6 +178,7 @@ int main(int argc, char **argv) {
     QVector <QVector <double> > imagePos;
     QVector <QVector <double> > xySpacing;
     QVector <double> zSpacing;
+    QVector <double> timeMulti;
 	
 	bool ctFlag = false;
 	
@@ -221,6 +227,7 @@ int main(int argc, char **argv) {
 	0028,1053	The m in the equation "HU_f = m*HU_i+b"
 	0028,1052	The b in the equation "HU_f = m*HU_i+b"
 	7fe0,0010	The unscaled HU data (HU_i) above for all voxels
+	0018,1242   The time taken to create the image in milliseconds
 	
 	Careful in that most DICOM data is in mm, and we are converting
 	to cm for the egsphant.  The HU data starts at the most -x and
@@ -255,6 +262,14 @@ int main(int argc, char **argv) {
                 }
 
                 zSpacing.append(temp.toDouble());
+            } // Actual Frame Duration (Integer String, in ms)
+            else if (dicom[i]->data[j]->tag[0] == 0x0018 && dicom[i]->data[j]->tag[1] == 0x1242) {
+                QString temp = "";
+                for (unsigned int s = 0; s < dicom[i]->data[j]->vl; s++) {
+                    temp.append(dicom[i]->data[j]->vf[s]);
+                }
+
+                timeMulti.append(temp.toInt()/1000.0); // convert to seconds
             } // Bits Stored
             else if (dicom[i]->data[j]->tag[0] == 0x0028 && dicom[i]->data[j]->tag[1] == 0x0101) {
 				if (dicom[i]->isBigEndian)
@@ -405,8 +420,8 @@ int main(int argc, char **argv) {
 		for (int j = 0; j < activity.ny; j++) { // Y //
 			nj = activity.ny-1-j; // Reversed j index for density and media assignment
 			for (int i = 0; i < activity.nx; i++) { // X //
-				activity.d[i][nj][k] = HU[k][j][i];
-				maxAct = (maxAct<HU[k][j][i])?HU[k][j][i]:maxAct;
+				activity.d[i][nj][k] = HU[k][j][i]*timeMulti[k];
+				maxAct = (maxAct<activity.d[i][nj][k])?activity.d[i][nj][k]:maxAct;
 			}
 		}
 			
@@ -434,7 +449,7 @@ int main(int argc, char **argv) {
 		
 	// Output activity to file
 	double minAct = maxAct*filterLowActivity, tempAct, zMid, yMid, xMid; // Threshold cutoff defined here
-	QFile outputF("Activity.txt");
+	QFile outputF(fileName+".txt");
 	
     if (outputF.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream output(&outputF);
