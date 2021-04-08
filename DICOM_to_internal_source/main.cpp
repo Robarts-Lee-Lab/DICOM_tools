@@ -179,8 +179,9 @@ int main(int argc, char **argv) {
     QVector <QVector <double> > xySpacing;
     QVector <double> zSpacing;
     QVector <double> timeMulti;
+	double volMulti = 1;
 	
-	bool ctFlag = false;
+	bool ctFlag = false, scaleBQML = false;
 	
 	// Put not-CT dicom in seperate array
     for (int i = 0; i < dicom.size(); i++) {
@@ -228,6 +229,7 @@ int main(int argc, char **argv) {
 	0028,1052	The b in the equation "HU_f = m*HU_i+b"
 	7fe0,0010	The unscaled HU data (HU_i) above for all voxels
 	0018,1242   The time taken to create the image in milliseconds
+	0054,1001   The units of the data, should be BQML
 	
 	Careful in that most DICOM data is in mm, and we are converting
 	to cm for the egsphant.  The HU data starts at the most -x and
@@ -270,6 +272,15 @@ int main(int argc, char **argv) {
                 }
 
                 timeMulti.append(temp.toInt()/1000.0); // convert to seconds
+            } // Units (Code String, in ms)
+            else if (dicom[i]->data[j]->tag[0] == 0x0018 && dicom[i]->data[j]->tag[1] == 0x1242) {
+                QString temp = "";
+                for (unsigned int s = 0; s < dicom[i]->data[j]->vl; s++) {
+                    temp.append(dicom[i]->data[j]->vf[s]);
+                }
+
+                if (!temp.trimmed().compare("BQML"))
+					scaleBQML = true;
             } // Bits Stored
             else if (dicom[i]->data[j]->tag[0] == 0x0028 && dicom[i]->data[j]->tag[1] == 0x0101) {
 				if (dicom[i]->isBigEndian)
@@ -412,6 +423,7 @@ int main(int argc, char **argv) {
 		activity.z[i] = prevZ/10.0;
 	}
 	activity.z.last() = nextZ/10.0;
+	volMulti = (activity.x[1]-activity.x[0])*(activity.y[1]-activity.y[0])*(activity.z[1]-activity.z[0]);
 	
 	// Write HU into density array (which is actually activity)
 	double maxAct = 0;
@@ -420,7 +432,10 @@ int main(int argc, char **argv) {
 		for (int j = 0; j < activity.ny; j++) { // Y //
 			nj = activity.ny-1-j; // Reversed j index for density and media assignment
 			for (int i = 0; i < activity.nx; i++) { // X //
-				activity.d[i][nj][k] = HU[k][j][i]*timeMulti[k];
+				if (scaleBQML)
+					activity.d[i][nj][k] = HU[k][j][i]*timeMulti[k]*volMulti;
+				else
+					activity.d[i][nj][k] = HU[k][j][i];					
 				maxAct = (maxAct<activity.d[i][nj][k])?activity.d[i][nj][k]:maxAct;
 			}
 		}
