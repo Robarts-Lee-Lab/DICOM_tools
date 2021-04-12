@@ -11,8 +11,8 @@ void submerge(QVector <DICOM *> &data, int i, int c, int f) {
 	
 	// While we have yet to iterate through either subsection
 	while (l <= c && r <= f) {
-		// If value at r index is smaller then add it to temp and move to next r
-		if (data[l]->z > data[r]->z)
+		// If value at r index is smaller (acquisition time  then add it to temp and move to next r
+		if (data[l]->t > data[r]->t || (data[l]->t == data[r]->t && data[l]->z > data[r]->z))
 			temp[j++] = data[r++];
 		// If value at l index is smaller then add it to temp and move to next l
 		else
@@ -84,12 +84,15 @@ int main(int argc, char **argv) {
 	terminates.
 	
 	filterLowDensity=X sets the activity to any voxel with density
-	less than X equal to zero.
+	less than X equal to zero.  Default is 0.5 g/cm^3.
 	
 	filterLowActivity=Y sets any activity below Y*maxActivity equal
-	to zero.
+	to zero.  Default is 0.01%.
 	
-	outputName=Z sets output file name to "Z.txt".
+	omitOuterSlices=Z does not include activity from the Z outer
+	most slices.  Default is 2.
+	
+	outputName=S sets output file name to "S.txt".
 	
 	outputImages outputs PNGs of each slice of the output phantoms
 	for both media and density, as well as a blue->red wash of 
@@ -98,8 +101,9 @@ int main(int argc, char **argv) {
 	registration.
 	*/
 	bool outputImages = false;
-	double filterLowDensity = 0;
-	double filterLowActivity = 0.01;
+	double filterLowDensity = 0.5;
+	double filterLowActivity = 0.0001;
+	int omitZ = 2;
 	QString fileName = "Activity";
 	
 	if (argc == 1) {
@@ -120,6 +124,8 @@ int main(int argc, char **argv) {
 			filterLowDensity = path.right(path.size()-17).toDouble();
         else if (!path.left(18).compare("filterLowActivity="))
 			filterLowActivity = path.right(path.size()-18).toDouble();
+        else if (!path.left(16).compare("omitOuterSlices="))
+			omitZ = path.right(path.size()-16).toInt();
         else if (!path.left(11).compare("outputName="))
 			fileName = path.right(path.size()-11);
         else if (path.endsWith(".egsphant"))
@@ -172,12 +178,15 @@ int main(int argc, char **argv) {
 	// Sort out all the DICOM data into the following
 	double rescaleM = 1, rescaleB = 0, rescaleFlag;
 	int bitsStored = 16, bytesStored = 2;
-    QVector <QVector <QVector <unsigned short int> > > HU;
+	QList <double> times;
+	int timeInd = 0;
+    QVector <QVector <QVector <QVector <unsigned short int> > > > HU;
     QVector <unsigned short int> xPix;
     QVector <unsigned short int> yPix;
     QVector <QVector <double> > imagePos;
     QVector <QVector <double> > xySpacing;
     QVector <double> zSpacing;
+    QVector <double> timeTaken;
     QVector <double> timeMulti;
 	double volMulti = 1;
 	
@@ -243,6 +252,14 @@ int main(int argc, char **argv) {
 	
     for (int i = 0; i < dicom.size(); i++) {
 		rescaleFlag = 0;
+		if (times.contains(dicom[i]->t)) {
+			timeInd = times.indexOf(dicom[i]->t);
+		}
+		else {
+			times.append(dicom[i]->t);
+			timeInd = times.size()-1;
+			HU.resize(HU.size()+1);
+		}
         for (int j = 0; j < dicom[i]->data.size(); j++) {
             // Pixel Spacing (Decimal String), row spacing and then column spacing (in mm)
             if (dicom[i]->data[j]->tag[0] == 0x0028 && dicom[i]->data[j]->tag[1] == 0x0030) {
@@ -266,14 +283,16 @@ int main(int argc, char **argv) {
                 zSpacing.append(temp.toDouble());
             } // Actual Frame Duration (Integer String, in ms)
             else if (dicom[i]->data[j]->tag[0] == 0x0018 && dicom[i]->data[j]->tag[1] == 0x1242) {
-                QString temp = "";
-                for (unsigned int s = 0; s < dicom[i]->data[j]->vl; s++) {
-                    temp.append(dicom[i]->data[j]->vf[s]);
-                }
+				if (timeMulti.size() < times.size()) {
+					QString temp = "";
+					for (unsigned int s = 0; s < dicom[i]->data[j]->vl; s++) {
+						temp.append(dicom[i]->data[j]->vf[s]);
+					}
 
-                timeMulti.append(temp.toInt()/1000.0); // convert to seconds
+					timeMulti.append(temp.toInt()/1000.0); // convert to seconds
+				}
             } // Units (Code String, in ms)
-            else if (dicom[i]->data[j]->tag[0] == 0x0018 && dicom[i]->data[j]->tag[1] == 0x1242) {
+            else if (dicom[i]->data[j]->tag[0] == 0x0054 && dicom[i]->data[j]->tag[1] == 0x1001) {
                 QString temp = "";
                 for (unsigned int s = 0; s < dicom[i]->data[j]->vl; s++) {
                     temp.append(dicom[i]->data[j]->vf[s]);
@@ -340,40 +359,39 @@ int main(int argc, char **argv) {
 				rescaleFlag++;
             } // HU values (assuming 2-bytes as I have yet to encounter anything different, ie, assumes TAG (0028,0100) = 16)
             else if (dicom[i]->data[j]->tag[0] == 0x7fe0 && dicom[i]->data[j]->tag[1] == 0x0010) {
-                HU.resize(HU.size()+1);
-				if (HU.size() == xPix.size() && HU.size() == yPix.size()) {
-                    HU.last().resize(yPix.last());
-                    for (unsigned int k = 0; k < yPix.last(); k++) {
-                        HU.last()[k].resize(xPix.last());
-                    }
-					
-					unsigned short int temp;
-                    if (dicom[i]->isBigEndian)
-                        for (unsigned int s = 0; s < dicom[i]->data[j]->vl; s+=bytesStored) {
-							temp = 0;
-							for (int ss = 0; ss < bytesStored; ss++)
-								temp += (dicom[i]->data[j]->vf[s+ss]) << (bitsStored-((ss+1)*8));
-							temp = rescaleFlag == 2 ? rescaleM*temp+rescaleB : temp;
-							
-							HU.last()[int(int(s/bytesStored)/xPix.last())][int(s/bytesStored)%xPix.last()] = temp;
-						}
-                    else
-                        for (unsigned int s = 0; s < dicom[i]->data[j]->vl; s+=bytesStored) {
-							temp = 0;
-							for (int ss = 0; ss < bytesStored; ss++)
-								temp += (dicom[i]->data[j]->vf[s+ss]) << (ss*8);
-							temp = rescaleFlag == 2 ? rescaleM*temp+rescaleB : temp;
-														
-							HU.last()[int(int(s/bytesStored)/xPix.last())][int(s/bytesStored)%xPix.last()] = temp;
-						}
-                }
+                HU[timeInd].resize(HU[timeInd].size()+1);
+				
+				HU[timeInd].last().resize(yPix.last());
+				for (unsigned int k = 0; k < yPix.last(); k++) {
+					HU[timeInd].last()[k].resize(xPix.last());
+				}
+				
+				unsigned short int temp;
+				if (dicom[i]->isBigEndian)
+					for (unsigned int s = 0; s < dicom[i]->data[j]->vl; s+=bytesStored) {
+						temp = 0;
+						for (int ss = 0; ss < bytesStored; ss++)
+							temp += (dicom[i]->data[j]->vf[s+ss]) << (bitsStored-((ss+1)*8));
+						temp = rescaleFlag == 2 ? rescaleM*temp+rescaleB : temp;
+						
+						HU[timeInd].last()[int(int(s/bytesStored)/xPix.last())][int(s/bytesStored)%xPix.last()] = temp;
+					}
+				else
+					for (unsigned int s = 0; s < dicom[i]->data[j]->vl; s+=bytesStored) {
+						temp = 0;
+						for (int ss = 0; ss < bytesStored; ss++)
+							temp += (dicom[i]->data[j]->vf[s+ss]) << (ss*8);
+						temp = rescaleFlag == 2 ? rescaleM*temp+rescaleB : temp;
+													
+						HU[timeInd].last()[int(int(s/bytesStored)/xPix.last())][int(s/bytesStored)%xPix.last()] = temp;
+					}
             }
         }
     }
 	
 	if (HU.size() > 0) {
 		duration = (std::clock()-start)/(double)CLOCKS_PER_SEC;
-		std::cout << "Extracted all HU data for the " << xPix[0] << "x" << yPix[0] << " slices.  Time elapsed is " << duration << " s.\n";
+		std::cout << "Extracted all HU data for the " << HU[timeInd].size() << " (" << xPix[0] << "x" << yPix[0] << ") slices over " << HU.size() << " acquisitions.  Time elapsed is " << duration << " s.\n";
 	}
 	else
 		std::cout << "Did not find HU data.\n";
@@ -392,7 +410,7 @@ int main(int argc, char **argv) {
 	EGSPhant activity;
 	activity.nx = xPix[0];
 	activity.ny = yPix[0];
-	activity.nz = dicom.size();
+	activity.nz = HU[timeInd].size();
     activity.x.fill(0,activity.nx+1);
     activity.y.fill(0,activity.ny+1);
     activity.z.fill(0,activity.nz+1);
@@ -426,20 +444,24 @@ int main(int argc, char **argv) {
 	volMulti = (activity.x[1]-activity.x[0])*(activity.y[1]-activity.y[0])*(activity.z[1]-activity.z[0]);
 	
 	// Write HU into density array (which is actually activity)
-	double maxAct = 0;
 	int nj = 0;
-	for (int k = 0; k < activity.nz; k++) // Z //
-		for (int j = 0; j < activity.ny; j++) { // Y //
-			nj = activity.ny-1-j; // Reversed j index for density and media assignment
-			for (int i = 0; i < activity.nx; i++) { // X //
-				if (scaleBQML)
-					activity.d[i][nj][k] = HU[k][j][i]*timeMulti[k]*volMulti;
-				else
-					activity.d[i][nj][k] = HU[k][j][i];					
-				maxAct = (maxAct<activity.d[i][nj][k])?activity.d[i][nj][k]:maxAct;
+	for (int t = 0; t < times.size(); t++) // T //
+		for (int k = omitZ; k < activity.nz-omitZ; k++) // Z //
+			for (int j = 0; j < activity.ny; j++) { // Y //
+				nj = activity.ny-1-j; // Reversed j index for density and media assignment
+				for (int i = 0; i < activity.nx; i++) { // X //
+					if (scaleBQML)
+						activity.d[i][nj][k] += HU[t][k][j][i]*timeMulti[t]*volMulti;
+					else
+						activity.d[i][nj][k] += HU[t][k][j][i];
+				}
 			}
-		}
-			
+	
+	double maxAct = 0;			
+	for (int k = 0; k < activity.nz; k++) // Z //
+		for (int j = 0; j < activity.ny; j++) // Y //
+			for (int i = 0; i < activity.nx; i++) // X //
+				maxAct = (maxAct<activity.d[i][j][k])?activity.d[i][j][k]:maxAct;
 			
 	duration = (std::clock()-start)/(double)CLOCKS_PER_SEC;
     std::cout << "Succesfully generated activity matrix (dimensions x: ["
