@@ -84,6 +84,9 @@ public:
 	
 	// z height (default to NaN, only change if slice height tag is found)
 	double z = std::nan("1");
+	
+	// time image was acquired (default to NaN, only change if slice height tag is found)
+	double t = std::nan("1");
 
 	// file location for later lookup
 	QString path;

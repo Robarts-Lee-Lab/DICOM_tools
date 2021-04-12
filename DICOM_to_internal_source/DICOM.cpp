@@ -570,6 +570,14 @@ int DICOM::parse(QString p) {
 					}
 
 					z = tempS.toDouble();
+                } // Save acquisition time for later sorting
+                else if (temp->tag[0] == 0x0008 && temp->tag[1] == 0x0032) {
+					QString tempS = "";
+					for (unsigned int s = 0; s < temp->vl; s++) {
+						tempS.append(temp->vf[s]);
+					}
+					// Format: HHMMSS
+					t = tempS.left(2).toDouble()*3600+tempS.left(4).right(2).toDouble()*60+tempS.left(6).right(2).toDouble();
                 }
             }
             else if (nested) {
