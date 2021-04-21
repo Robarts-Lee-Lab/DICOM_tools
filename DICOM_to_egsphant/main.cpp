@@ -96,6 +96,8 @@ int main(int argc, char **argv) {
 	over the media images.  It is very time intensive, so best to
 	be used to check TAS and registration.
 	
+	outputName=S sets output file name to "S.txt".
+	
 	nominalDensity uses the file Default_mediaDensity.txt (where
 	the file lookup would change for the appropriate tag) to
 	assign densities to all media.
@@ -105,6 +107,7 @@ int main(int argc, char **argv) {
 	bool outputImages = false;
 	bool nominalDensity = false;
 	QString TAS_tag("Default");
+	QString fileName = "Output";
 	
 	if (argc == 1) {
         std::cout << "Please call this program with one or more .dcm files.\n";
@@ -124,6 +127,8 @@ int main(int argc, char **argv) {
 			makeMasks = true;
 		else if (!path.compare("-nominalDensity"))
 			nominalDensity = true;
+        else if (!path.left(11).compare("outputName="))
+			fileName = path.right(path.size()-11);
 		else if (!path.left(4).compare("tag="))
 			TAS_tag = path.right(path.size()-4);
 		else if (d->parse(path)) {
@@ -896,7 +901,7 @@ int main(int argc, char **argv) {
 			  << phant.z[0] << "," << phant.z[phant.nz] << "]).  Time elapsed is " << duration << " s.\n";
 	
 	// Save file
-	phant.saveEGSPhantFile("PrimaryOutput.egsphant");
+	phant.saveEGSPhantFile(fileName+".egsphant");
 	//phant.savebEGSPhantFile("PrimaryOutput.begsphant");
 	duration = (std::clock()-start)/(double)CLOCKS_PER_SEC;
     std::cout << "File successfully output.  Time elapsed is " << duration << " s.\n";
