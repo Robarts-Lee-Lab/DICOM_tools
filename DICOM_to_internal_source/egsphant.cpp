@@ -603,7 +603,7 @@ double EGSPhant::interpDen(double xp, double yp, double zp) {
 
     // Define X
     xi = getIndex("x axis", xp);
-    if (xp < (x[xi] + x[xi-1])/2.0) {
+    if (xp < (x[xi] + x[xi+1])/2.0) {
         x0 = (x[xi] + x[xi-1])/2.0;
         x1 = (x[xi] + x[xi+1])/2.0;
     }
@@ -614,7 +614,7 @@ double EGSPhant::interpDen(double xp, double yp, double zp) {
 
     // Define Y
     yi = getIndex("y axis", yp);
-    if (yp < (y[yi] + y[yi-1])/2.0) {
+    if (yp < (y[yi] + y[yi+1])/2.0) {
         y0 = (y[yi] + y[yi-1])/2.0;
         y1 = (y[yi] + y[yi+1])/2.0;
     }
@@ -625,7 +625,7 @@ double EGSPhant::interpDen(double xp, double yp, double zp) {
 
     // Define Z
     zi = getIndex("z axis", zp);
-    if (zp < (z[zi] + z[zi-1])/2.0) {
+    if (zp < (z[zi] + z[zi+1])/2.0) {
         z0 = (z[zi] + z[zi-1])/2.0;
         z1 = (z[zi] + z[zi+1])/2.0;
     }
