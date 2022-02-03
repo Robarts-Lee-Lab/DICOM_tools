@@ -92,6 +92,10 @@ int main(int argc, char **argv) {
 	omitOuterSlices=Z does not include activity from the Z outer
 	most slices.  Default is 2.
 	
+	halfActivityMedium=media halves activity in the chosen media.
+	
+	noActivityMedium=media halves activity in the chosen media.
+		
 	outputName=S sets output file name to "S.txt".
 	
 	outputImages outputs PNGs of each slice of the output phantoms
@@ -100,11 +104,14 @@ int main(int argc, char **argv) {
 	intensive, so best to be used to check activity and
 	registration.
 	*/
+	
 	bool outputImages = false;
 	double filterLowDensity = 0.5;
 	double filterLowActivity = 0.0001;
 	int omitZ = 2;
 	QString fileName = "Activity";
+	QStringList halfActivityMedium, noActivityMedium;
+	QApplication app(argc,argv);
 	
 	if (argc == 1) {
         std::cout << "Please call this program with one or more .dcm files and a .egsphant or .begsphant file.\n";
@@ -118,8 +125,11 @@ int main(int argc, char **argv) {
 
     for (int i = 0; i < argc-1; i++) {
         QString path(argv[i+1]);
-        if (!path.compare("-outputImages"))
+        if (!path.compare("-outputImages")) {
 			outputImages = true;
+			if (!QDir(QCoreApplication::applicationDirPath()+"/Image").exists())
+				QDir().mkdir(QCoreApplication::applicationDirPath()+"/Image");
+		}
         else if (!path.left(17).compare("filterLowDensity="))
 			filterLowDensity = path.right(path.size()-17).toDouble();
         else if (!path.left(18).compare("filterLowActivity="))
@@ -128,6 +138,10 @@ int main(int argc, char **argv) {
 			omitZ = path.right(path.size()-16).toInt();
         else if (!path.left(11).compare("outputName="))
 			fileName = path.right(path.size()-11);
+        else if (!path.left(19).compare("halfActivityMedium="))
+			halfActivityMedium.append(path.right(path.size()-19));
+        else if (!path.left(17).compare("noActivityMedium="))
+			noActivityMedium.append(path.right(path.size()-17));
         else if (path.endsWith(".egsphant"))
 			phant.loadEGSPhantFilePlus(path);
 		else if (path.endsWith(".begsphant"))
@@ -497,10 +511,27 @@ int main(int argc, char **argv) {
 				for (int i = 0; i < phant.nx; i++) { // X //
 					if (phant.d[i][j][k] >= filterLowDensity) {
 						xMid = (phant.x[i]+phant.x[i+1])/2.0;
+						
+						// Interpolate the activity from the activity matrix
 						tempAct = activity.interpDen(xMid, yMid, zMid);
 						
+						// Get voxel media
+						char tempM = phant.m[i][j][k];
+						tempM = tempM>'9'?tempM-'A'+9:tempM-'1';
+						int indexM = int(tempM);
+						QString media = phant.media[indexM];
+
+						// Halve the activity in the selected media
+						if (halfActivityMedium.contains(media))
+							tempAct /= 2;
+						
+						// Remove the activity in the selected media
+						if (noActivityMedium.contains(media))
+							tempAct *= 0;						
+						
+						// If it's above the activity threshold
 						if (tempAct > minAct)
-							output << i+j*phant.nx+k*phant.nx*phant.ny << " " << tempAct << "\n";
+							output << i+j*phant.nx+k*phant.nx*phant.ny << " " << tempAct << "\n";		
 					}
 				}
 			}
@@ -524,6 +555,7 @@ int main(int argc, char **argv) {
 	additional step in drawing a blue to red color wash of
 	activity as assigned in the Activity.txt file.
 	*/
+	
 	if (outputImages) {
 		double xi = (phant.x[0]+phant.x[1])/2.0;
 		double xf = (phant.x[phant.nx-1]+phant.x[phant.nx])/2.0;
@@ -532,31 +564,51 @@ int main(int argc, char **argv) {
 		double res = 1/(phant.x[1]-phant.x[0])*2; // This sets resolution to be 2 pixels for each voxel in x
 		QImage tempM, tempD;
 		QPen pen;
-		pen.setWidth(1);
+		pen.setWidth(2);
 		for (int k = 0; k < phant.nz; k++) {
 			zMid = (phant.z[k]+phant.z[k+1])/2.0;
 			tempM = phant.getEGSPhantPicMed("z axis", yi, yf, xi, xf, zMid, res);
 			tempD = phant.getEGSPhantPicDen("z axis", yi, yf, xi, xf, zMid, res);
 			
 			QPainter paintM (&tempM), paintD (&tempD);
+			paintM.setOpacity(0.5);
+			paintD.setOpacity(0.5);
 			for (int j = 0; j < phant.ny; j++) { // Y //
 				yMid = (phant.y[j]+phant.y[j+1])/2.0;
 				for (int i = 0; i < phant.nx; i++) { // X //
 					xMid = (phant.x[i]+phant.x[i+1])/2.0;
 					
 					tempAct = activity.interpDen(xMid, yMid, zMid);
+					
+					// Get voxel media
+					char tempM = phant.m[i][j][k];
+					tempM = tempM>'9'?tempM-'A'+9:tempM-'1';
+					int indexM = int(tempM);
+					QString media = phant.media[indexM];
+
+					// Halve the activity in the selected media
+					if (halfActivityMedium.contains(media))					
+						tempAct /= 2;
+					
+					// Remove the activity in the selected media
+					if (noActivityMedium.contains(media))
+						tempAct *= 0;	
+					
 					if (tempAct > minAct && phant.d[i][j][k] >= filterLowDensity) {
 						tempAct = (tempAct-minAct)/(maxAct-minAct);
 						tempAct = tempAct > 1.0 ? 1.0 : tempAct;
 						pen.setColor(QColor(tempAct*255.0,0,(1.0-tempAct)*255.0));
 						
-						paintM.setPen(pen); paintM.drawPoint(i*2, (phant.ny-1-j)*2); paintM.drawPoint(i*2+1, (phant.ny-1-j)*2+1);
-						paintD.setPen(pen); paintD.drawPoint(i*2, (phant.ny-1-j)*2); paintD.drawPoint(i*2+1, (phant.ny-1-j)*2+1);
+						paintM.setPen(pen);
+						paintM.drawPoint(i*2+1, (phant.ny-1-j)*2-1);
+						
+						paintD.setPen(pen);
+						paintD.drawPoint(i*2+1, (phant.ny-1-j)*2-1);
 					}
 				}
 			}
-			tempM.save(QString("Image/MedPic")+QString::number(k+1)+".png");
-			tempD.save(QString("Image/DenPic")+QString::number(k+1)+".png");
+			tempM.save(QCoreApplication::applicationDirPath()+"/Image/MedPic"+QString::number(k+1)+".png");
+			tempD.save(QCoreApplication::applicationDirPath()+"/Image/DenPic"+QString::number(k+1)+".png");
 		}
 		
 		duration = (std::clock()-start)/(double)CLOCKS_PER_SEC;

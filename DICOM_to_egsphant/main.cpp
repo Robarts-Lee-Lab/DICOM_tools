@@ -108,6 +108,7 @@ int main(int argc, char **argv) {
 	bool nominalDensity = false;
 	QString TAS_tag("Default");
 	QString fileName = "Output";
+	QApplication app(argc,argv);
 	
 	if (argc == 1) {
         std::cout << "Please call this program with one or more .dcm files.\n";
@@ -121,8 +122,11 @@ int main(int argc, char **argv) {
     for (int i = 0; i < argc-1; i++) {
         QString path(argv[i+1]);
         DICOM *d = new DICOM(&dat);
-        if (!path.compare("-outputImages"))
+        if (!path.compare("-outputImages")) {
 			outputImages = true;
+			if (!QDir(QCoreApplication::applicationDirPath()+"/Image").exists())
+				QDir().mkdir(QCoreApplication::applicationDirPath()+"/Image");
+		}
 		else if (!path.compare("-makeMasks"))
 			makeMasks = true;
 		else if (!path.compare("-nominalDensity"))
@@ -941,7 +945,7 @@ int main(int argc, char **argv) {
 	if (outputImages) {
 		for (int i = 0; i < phant.nz; i++) {
 			z = imagePos[i][2]/10.0;
-			phant.getEGSPhantPicDen("z axis", yi, yf, xi, xf, z, res).save(QString("Image/DenPic")+QString::number(i+1)+".png");
+			phant.getEGSPhantPicDen("z axis", yi, yf, xi, xf, z, res).save(QCoreApplication::applicationDirPath()+"/Image/DenPic"+QString::number(i+1)+".png");
 			
 			temp = phant.getEGSPhantPicMed("z axis", yi, yf, xi, xf, z, res);
 			QPainter paint (&temp);
@@ -956,7 +960,7 @@ int main(int argc, char **argv) {
 							paint.drawPoint(phant.getIndex("x axis", tempIt->x())*2, phant.getIndex("y axis", tempIt->y())*2);
 					}
 				}
-			temp.save(QString("Image/MedPic")+QString::number(i+1)+".png");
+			temp.save(QCoreApplication::applicationDirPath()+"/Image/MedPic"+QString::number(i+1)+".png");
 		}
 		
 		duration = (std::clock()-start)/(double)CLOCKS_PER_SEC;
